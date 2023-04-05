@@ -1,0 +1,22 @@
+CentOS Linux 5 (Core)
+CentOS Linux 6 (Core)
+CentOS Linux 7 (Core)
+CentOS Linux 8 (Core)
+
+
+Ubuntu 10 
+Ubuntu 12 
+Ubuntu 14 
+Ubuntu 16 
+Ubuntu 18 
+
+Oracle Linux 5.6
+Oracle Linux 6
+Oracle Linux 7
+Oracle Linux 8
+
+
+Microsoft Windows Server 2012 R1
+Microsoft Windows Server 2012 R2
+Microsoft Windows Server 2016 Standard
+Microsoft Windows Server 2019 Standard
