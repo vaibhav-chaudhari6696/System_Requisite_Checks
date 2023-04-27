@@ -25,48 +25,49 @@ fi
 
 #################################################################################################################
 #################################################################################################################
-    
+port=22
 function main {
     # Define the path to the text file containing the list of devices
     devices_list="./devices.txt"
 
 
     # Loop through each line in the text file
-    while IFS= read -r line || [ -n "$line" ]; do
-
-        # Extract the host address, username, and password from the line
-        local host=$(echo $line | cut -d ' ' -f 1)
-        local username=$(echo $line | cut -d ' ' -f 2)
-        local password=$(echo $line | cut -d ' ' -f 3)
-        local ostype=$(echo $line | cut -d ' ' -f 4)
-
+    while IFS=$' \t,' read -r host username password ostype port_no || [ -n "$host" ]; do
 
         #################################################################################################################
         #################################################################################################################
 
         # Check if the IP address is value present
-        if ! [[ "$host" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || [ -z "$host" ] || [ "$host" == " " ]; then
+        if ! [[ "$host" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || [ -z "$host" ] || [[ "$host" =~ [[:space:]] ]]; then
             echo "Error: Missing IP address Skipping device"
             continue
         fi
 
         # Check if the username is value present
-        if [ -z "$username" ] || [ "$username" == " " ]; then
+        if [ -z "$username" ] || [[ "$username" =~ [[:space:]] ]]; then
             echo "Error: Missing username in Skipping device"
             continue
         fi
 
         # Check if the password is value present
-        if [ -z "$password" ] || [ "$password" == " " ]; then
+        if [ -z "$password" ] || [[ "$password" =~ [[:space:]] ]]; then
             echo "Error: Missing password in Skipping device"
             continue
         fi
 
         # Check if the operating system is value present
-        if [ -z "$ostype" ] || [ "$ostype" == " " ]; then
+        if [ -z "$ostype" ] || [[ "$ostype" =~ [[:space:]] ]]; then
             echo "Error: Missing OS Type in Skipping device"
             continue
         fi
+
+        # Check if the port number given
+        if [[ -n "$port_no" ]] && [[ "$port_no" =~ ^[0-9]+$ ]]; then
+            port=$port_no 
+        else
+            port=22
+        fi
+
         #################################################################################################################
         #################################################################################################################
 
@@ -80,6 +81,27 @@ function main {
 
 
 
+        #################################################################################################################
+        #################################################################################################################
+        echo -e "------------ REACHABLE PORT CHECK ------------"
+
+        # Check for port 22 open
+        nc -z -w 10 "$host" "$port"
+
+        # If given port is not open on remote device then skip pre requisite checking for that device
+        if [ "$?" -ne 0 ]; then
+            echo "Machine $host is not reachable over port $port, skipping checks for machine"
+            continue
+        else
+            echo "Machine $host is reachable over port $port"
+        fi
+
+        echo -e "-------------------------------------------------------------------------------\n\n"  
+        #################################################################################################################
+        #################################################################################################################
+
+
+
 
 
         #^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^#
@@ -87,26 +109,6 @@ function main {
         #^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^#
         
         if [ "$ostype" == "linux" ]; then
-        
-            
-            #################################################################################################################
-            #################################################################################################################
-            echo -e "------------ PORT 22 CHECK ------------"
-
-            # Check for port 22 open
-            nc -z -w 1 "$host" 22
-
-            if [ "$?" -eq 0 ]; then
-                echo "Port 22 is open on $host"
-            # If port 22 is not open on remote device then skip pre requisite checking for that device
-            else
-                echo "Port 22 is closed on $host, skipping"
-                continue
-            fi
-
-            echo -e "-------------------------------------------------------------------------------\n\n"  
-            #################################################################################################################
-            #################################################################################################################
 
             os_check_linux $host $username $password
             echo -e "-------------------------------------------------------------------------------\n\n"  
@@ -120,7 +122,7 @@ function main {
 
         
             #------------------------- Checking Linux Specific Pre-Requisites ------------------------#
-            ./LinuxCheck.sh "$host" "$username" "$password"
+            ./LinuxCheck.sh "$host" "$username" "$password" "$port"
 
         #################################################################################################################
         #################################################################################################################
@@ -135,35 +137,6 @@ function main {
 
         
         elif [ "$ostype" == "windows" ]; then
-        
-
-            #################################################################################################################
-            #################################################################################################################
-            echo -e "------------ PORT 22 AND PORT 445 CHECK ------------"
-
-            # Check for port 22 open
-            nc -z -w 1 "$host" 22
-
-            if [ "$?" -eq 0 ]; then
-                echo "Port 22 is open on $host"
-             
-            # If port 22 is not open on remote windows device then check for port 445 
-            else
-                # Check for port 445 open
-                 nc -z -w 1 "$host" 445
-                 if [ "$?" -eq 0 ]; then
-                    echo "Port 445 is open on $host"
-                 
-                # If port 22 and port 445 are not open on remote device then skip pre requisite checking for that device
-                 else
-                    echo "Port 22 and Port 445 are closed on $host, skipping"
-                    continue
-                 fi
-            fi
-
-            echo -e "-------------------------------------------------------------------------------\n\n"  
-            #################################################################################################################
-            #################################################################################################################
             
             os_check_windows $host $username $password
             echo -e "-------------------------------------------------------------------------------\n\n"  
@@ -220,9 +193,9 @@ function os_check_linux {
     local username=$2
     local password=$3
     echo -e "------------ OS CHECK ------------"
-
+    
     # Get a os of system
-    os=$(sshpass -p "$password" ssh -n "$username@$host" "cat /etc/*-release ")
+    os=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "cat /etc/*-release ")
     osname=$(echo "$os" | grep "PRETTY_NAME" | sed 's/PRETTY_NAME=//g' | sed 's/"//g')
 
     # Checking whether system os is supported or not
@@ -252,43 +225,37 @@ function cloud_check_linux {
     local host=$1
     local username=$2
     local password=$3
+    
 
-
-    if command -v dmidecode >/dev/null 2>&1; then
-        system_info=$(sshpass -p "$password" ssh -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode'")
+    
+    if sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v dmidecode >/dev/null 2>&1"; then
+        system_info=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode'")
     else
-        echo "ERROR: Cloud detection command not found."
+        echo "ERROR: Cloud detection (dmidecode) command is not installed on $host"
         system_info=""
     fi
 
     cloud_name=""
     if [[ -z "$system_info" ]]; then
-        echo "Error No output "
         hypervisor_check_linux $host $username $password
     else
 
-        # Check if the output contains the string "OracleCloud.com", which indicates the system is running on OCI
+        
         if [[ $system_info =~ "OracleCloud.com" ]]; then
             cloud_name="OCI"
-
-        # Check if the output contains the string "Amazon EC2", which indicates the system is running on AWS
+            
         elif [[ $system_info =~ "Amazon EC2" ]]; then
             cloud_name="AWS"
-            
-            
-        # Check if the output contains the string "Microsoft Corporation Hyper-V", which indicates the system is running on Azure
-        elif [[ $system_info =~ "Microsoft Corporation Hyper-V" ]]; then
+             
+        elif [[ $system_info =~ "Microsoft Corporation Hyper-V" ]] || [[ $system_info =~ "Microsoft Corporation" ]] || [[ $system_info =~ "Hyper-V" ]]; then
             cloud_name="Azure"
-
-        # Check if the output contains the string "Google Compute Engine", which indicates the system is running on GCP
+            
         elif [[ $system_info =~ "Google Compute Engine" ]]; then
             cloud_name="GCP"
-        
-        # Check if the output contains the string "IBM Corporation Power System", which indicates the system is running on IBM Gen2 Cloud
+               
         elif [[ $system_info =~ "IBM Corporation Power System" ]]; then
             cloud_name="IBM Gen2"
 
-        # Check if the output contains the string "Zadara Storage Cloud", which indicates the system is running on Zadara
         elif [[ $system_info =~ "Zadara Storage Cloud" ]]; then
             cloud_name="Zadara"
             
@@ -316,14 +283,17 @@ function hypervisor_check_linux {
     echo -e "----------- HYPERVISOR CHECK -----------"
 
     # Get a hypervisor of system
-    if command -v systemd-detect-virt >/dev/null 2>&1; then
-        hypervisor=$(sshpass -p "$password" ssh -n "$username@$host" "systemd-detect-virt")
-    elif command -v dmidecode >/dev/null 2>&1; then
-        hypervisor=$(sshpass -p "$password" ssh -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode -s system-product-name | tr '[:upper:]' '[:lower:]''")
-    elif command -v virt-what >/dev/null 2>&1; then
-        hypervisor=$(sshpass -p "$password" ssh -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'virt-what'")
+    if sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v systemd-detect-virt >/dev/null 2>&1"; then
+        hypervisor=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "systemd-detect-virt")
+    
+    elif sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v virt-what >/dev/null 2>&1"; then
+        hypervisor=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'virt-what'")
+    
+    elif sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v dmidecode >/dev/null 2>&1"; then
+        hypervisor=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode -s system-product-name | tr '[:upper:]' '[:lower:]''")
+    
     else
-        echo "ERROR: Hypervisor detection command not found."
+        echo "ERROR: Hypervisor detection (systemd-detect-virt or virt-what or dmidecode )command not installed on $host"
         hypervisor=""
     fi
 
@@ -333,7 +303,7 @@ function hypervisor_check_linux {
         echo "Error No output "
     else
         if grep -qi "^${hypervisor// /.*}.*$" hypervisor_list.txt; then
-            echo "Device is running on $hypervisor which is supported hypervisor."
+            echo "Device is running on $hypervisor which is supported hypervisor"
         else
             echo "Device is running on unsupported hypervisor or not running on hypervisor"
         fi
@@ -363,7 +333,7 @@ function filesystem_check_linux {
     fs_types_file="./file_systems.txt"
 
     # Get a list of all mounted file systems and their types, excluding loop devices and system file systems
-    df_output=$(sshpass -p "$password" ssh -n "$username@$host" "df -T")
+    df_output=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "df -T")
     mounted_fs=$( echo "$df_output" | awk '{if($1 !~ /^\/dev\/loop/ && $2 !~ /^(sysfs|proc|udev|devtmpfs|tmpfs)$/ ) print $1":"$2}' | tail -n +2)
 
     if [[ -z "$mounted_fs" ]]; then
@@ -436,30 +406,45 @@ function cloud_check_windows {
     local username=$2
     local password=$3
     
-    system_info=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic systemenclosure get SMBIOSAssetTag /format:list")
-    system_info=$(echo "$system_info" |  tr -d '\r\n'  )
-    system_info=$(echo "$system_info" |  cut -d'=' -f2  )
+    # Getting network adapter name details 
+    system_info1=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic nic get name")
+    system_info1=$(echo "$system_info1" |  tr -d '\r\n'  )
+    system_info1=$(echo "$system_info1" |  cut -d'=' -f2  )
     
+    # Getting diskdrive model name
+    system_info2=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic diskdrive get model" | tail -n +2)
+    system_info2=$(echo "$system_info2" |  tr -d '\r\n'  )
+    system_info2=$(echo "$system_info2" |  cut -d'=' -f2  )
 
     cloud_name=""
-    if [[ -z "$system_info" ]]; then
-        echo "Error No output "
+    if [[ -z "$system_info1" ]] || [[ -z "$system_info2" ]] ; then
         hypervisor_check_windows $host $username $password
     else
 
-        if [[ "$system_info" == *"OracleCloud.com"* ]]; then
-            cloud_name="OCI"
-        elif [[ "$system_info" == *"Amazon EC2"* ]]; then
+        if [[ "$system_info1" == *"Oracle VirtIO Ethernet Adapter"* ]] && [[ "$system_info2" == *"ORACLE"* ]]; then
+            cloud_name="OCI"  
+           
+        elif [[ "$system_info1" == *"Amazon Elastic Network Adapter"* ]] && [[ "$system_info2" == *"Amazon"* ]]; then
             cloud_name="AWS"
-        elif [[ "$system_info" == *"Google Compute Engine"* ]]; then
-            cloud_name="GCP"
-        elif [[ "$system_info" == *"Microsoft Corporation Hyper-V"* ]]; then
-            cloud_name="Azure"
-        elif [[ "$system_info" == *"IBM Corporation Power System"* ]]; then
-            cloud_name="IBM Gen2"
-        elif [[ "$system_info" == *"Zadara Storage Cloud"* ]]; then
-            cloud_name="Zadara"  
+            
 
+
+        elif [[ "$system_info1" == *"Microsoft Hyper-V Network Adapter"* ]] && [[ "$system_info2" == *"Microsoft"* ]]; then
+            cloud_name="Azure"
+          
+    
+        elif [[ "$system_info1" == *"Google VirtIO Ethernet Adapter"* ]] && [[ "$system_info2" == *"Google"* ]]; then
+            cloud_name="GCP"
+            
+
+        
+        elif [[ "$system_info1" == *"IBMGen2"* ]] && [[ "$system_info2" == *"IBM"* ]]; then
+            cloud_name="IBM Gen2"
+            
+
+        elif [[ "$system_info1" == *"Zadara"* ]] && [[ "$system_info2" == *"Zadara"* ]]; then
+            cloud_name="Zadara"
+          
         # If not running on supported clouds, check for hypervisor.
         else
             hypervisor_check_windows $host $username $password
@@ -482,21 +467,35 @@ function hypervisor_check_windows {
     local password=$3
     echo -e "------------ HYPERVISOR CHECK -------------"
 
+    # Get a hypervisor state (Present or not) 
+    hypervisor_state=$(sshpass -p "$password" ssh -n "$username@$host" "wmic computersystem get HypervisorPresent /format:list")
+    hypervisor_state=$(echo "$hypervisor_state" |  tr -d '\r\n'  )
+    hypervisor_state=$(echo "$hypervisor_state" |  cut -d'=' -f2  )
+
     # Get a hypervisor of system
-    hypervisor=$(sshpass -p "$password" ssh -n "$username@$host" "wmic csproduct get name /format:list")
+    hypervisor=$(sshpass -p "$password" ssh -n "$username@$host" "wmic computersystem get model /format:list")
     hypervisor=$(echo "$hypervisor" |  tr -d '\r\n'  )
     hypervisor=$(echo "$hypervisor" |  cut -d'=' -f2  )
     
-   # Checking whether  hypervisor is supported or not
-    if [[ -z "$hypervisor" ]]; then
+    
+    if [[ -z "$hypervisor_state" ]] || [[ -z "$hypervisor" ]]; then
         echo "Error No output "
     else
-        if grep -qi "^${hypervisor// /.*}.*$" hypervisor_list.txt; then
-            echo "Device is running on $hypervisor which is supported hypervisor."
+        # Checking whether  hypervisor is present or not
+        if [[ "$hypervisor_present" == *"TRUE"* ]] ; then
+
+            # Checking whether  hypervisor is supported or not
+            if grep -qi "^${hypervisor// /.*}.*$" hypervisor_list.txt; then
+                echo "Device is running on $hypervisor which is supported hypervisor."
+            else
+                echo "Device is running on unsupported hypervisor or not running on hypervisor"
+            fi
+
         else
-            echo "Device is running on unsupported hypervisor or not running on hypervisor"
+            echo "Device is not running on hypervisor"
         fi
     fi
+
 
 }
 #################################################################################################################
