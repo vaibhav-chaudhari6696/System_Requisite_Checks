@@ -8,6 +8,8 @@
 host_ip=$1
 user=$2
 pass=$3
+port=$4
+
 
 function main {
     local host=$1
@@ -42,13 +44,24 @@ function shadowcopy_check_windows {
     local password=$3
     echo -e "------- CHECK FOR VOLUMES HAVE SHADOWCOPY STORAGE --------"
 
+    
     # Get list of volumes
-    volumes_raw=$(sshpass -p "$password" ssh -n "$username@$host" 'wmic logicaldisk get caption')
+    if [ "$port" -eq 22 ]; then
+        volumes_raw=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" "wmic logicaldisk get caption")
+    elif [ "$port" -eq 445 ]; then
+        volumes_raw=$(winexe -U "$username%$password" //$host 'cmd.exe /c wmic logicaldisk get caption')
+    fi
+
     volumes_raw=$(echo "$volumes_raw" | tail -n+2)
     volumes=$(echo "$volumes_raw" | grep -oP '([A-Z])+' | tr '[:lower:]' '[:upper:]' | tr '\n' ' ')
 
     # Get the list of volumes that have shadow copy
-    shadow_volumes_raw=$(sshpass -p "$password" ssh -n "$username@$host" 'vssadmin list shadowstorage')
+    if [ "$port" -eq 22 ]; then
+        shadow_volumes_raw=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" 'vssadmin list shadowstorage')
+    elif [ "$port" -eq 445 ]; then
+        shadow_volumes_raw=$(winexe -U "$username%$password" //$host 'cmd.exe /c vssadmin list shadowstorage')
+    fi
+  
     shadow_volumes=$(echo "$shadow_volumes_raw" | awk -F':' '/For volume/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' | grep -oP '([A-Z])' | tr '\n' ' ')
 
     # Find the non-shadow volumes
@@ -85,8 +98,12 @@ function shadowcopy_storage_space_check_windows {
     echo -e "------- CHECK FOR VOLUMES HAVE 15% OR MORE SHADOWCOPY STORAGE SPACE --------"
 
     # Run the command to get shadow copy storage space on all volumes
-    output=$(sshpass -p "$password" ssh -n "$username@$host" 'vssadmin list shadowstorage')
-
+    if [ "$port" -eq 22 ]; then
+        output=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" 'vssadmin list shadowstorage')
+    elif [ "$port" -eq 445 ]; then
+        output=$(winexe -U "$username%$password" //$host 'cmd.exe /c vssadmin list shadowstorage')
+    fi
+   
     # Extract maximum shadow copy storage space for each volume using AWK
     awk_output=$(echo "$output" | awk -F':' '
         /For volume/{
@@ -136,14 +153,22 @@ function drive_free_space_check_windows {
     local password=$3
 
     echo -e "------- CHECK FOR FREE SPACE ON DRIVES --------"
-
     # Get the drive letter of the OS drive
-    os_drive=$(sshpass -p "$password" ssh -n "$username@$host" 'echo %systemdrive%')
+    if [ "$port" -eq 22 ]; then
+        os_drive=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" 'echo %systemdrive%')
+    elif [ "$port" -eq 445 ]; then
+        os_drive=$(winexe -U "$username%$password" //$host 'cmd.exe /c echo %systemdrive%')
+    fi
+    
     echo "OS drive : ${os_drive:0:1}"
 
     # Run the command to get free space and total size on the OS drive
-    output=$(sshpass -p "$password" ssh -n "$username@$host" "wmic logicaldisk where DeviceID='$os_drive' get FreeSpace,Size /value")
-
+    if [ "$port" -eq 22 ]; then
+        output=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" "wmic logicaldisk where DeviceID='$os_drive' get FreeSpace,Size /value") 
+    elif [ "$port" -eq 445 ]; then
+        output=$(winexe -U "$username%$password" //$host 'cmd.exe /c wmic logicaldisk where DeviceID='$os_drive' get FreeSpace,Size /value')
+    fi
+   
     if [[ -z "$output" ]]; then
         echo "Error No output "
     else
@@ -183,7 +208,12 @@ function antivirus_check_windows {
     local password=$3
     echo -e "------- CHECK FOR WINDOWS DEFENDER AND ANTIVIRUS --------"
 
-    output=$(sshpass -p "$password" ssh -n "$username@$host" 'sc query Windefend')
+    if [ "$port" -eq 22 ]; then
+        output=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" 'sc query Windefend')
+    elif [ "$port" -eq 445 ]; then
+        output=$(winexe -U "$username%$password" //$host 'cmd.exe /c sc query Windefend')
+    fi
+
 
     if [ $? -eq 1060 ]; then
             echo "Windows Defender is not installed."
@@ -199,7 +229,12 @@ function antivirus_check_windows {
 
 
     # Check for antivirus
-    antivirus=$(sshpass -p "$password" ssh -n "$username@$host" 'wmic /namespace:\\root\SecurityCenter2 path AntivirusProduct get displayName' 2>/dev/null) 
+    if [ "$port" -eq 22 ]; then
+        antivirus=$(sshpass -p $password ssh -n -o StrictHostKeyChecking=no $username@$host 'wmic /namespace:\\root\SecurityCenter2 path AntivirusProduct get displayName' 2>/dev/null)
+    elif [ "$port" -eq 445 ]; then
+        antivirus=$(winexe -U "$username%$password" //$host 'cmd.exe /c wmic /namespace:\\root\SecurityCenter2 path AntivirusProduct get displayName' 2>/dev/null)
+    fi
+    
 
     if [ -n "$antivirus" ]; then
         echo -e  "\n\nList of third party antivirus installed: "     
@@ -229,7 +264,12 @@ function language_check_windows {
     local password=$3
     echo -e "------- CHECK FOR WINDOWS LANGUAGE SUPPORT --------"
 
-    language=$(sshpass -p "$password" ssh -n "$username@$host" 'systeminfo | findstr /B /C:"System Locale')
+
+    if [ "$port" -eq 22 ]; then
+        language=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" 'systeminfo | findstr /B /C:"System Locale')
+    elif [ "$port" -eq 445 ]; then
+        language=$(winexe -U "$username%$password" //$host 'cmd.exe /c systeminfo | findstr /B /C:"System Locale')
+    fi
 
     if [[ -z "$language" ]]; then
         echo "Error No output "
