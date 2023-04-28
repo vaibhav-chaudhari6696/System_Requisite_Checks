@@ -36,7 +36,7 @@ function root_user_check_linux {
     local password=$3
     echo -e "------- CHECK FOR ROOT USER  -------"
 
-    idval=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "id -u")
+    idval=$(sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "id -u")
     if [[ -z "$idval" ]]; then
             echo "Error: No Output "
     else
@@ -49,7 +49,7 @@ function root_user_check_linux {
             echo "User $username is not the root user."
             echo "Checking for sudo privileges....."
 
-            command_output=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "groups $username")
+            command_output=$(sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "groups $username")
             if echo "$command_output" | grep &>/dev/null '\bsudo\b'; then
                 echo "User $username has sudo privileges."
             
@@ -77,9 +77,9 @@ function volume_group_free_extents_check_linux_v1 {
     echo -e "------- CHECK FOR VOLUME GROUP HAVE 15% OR MORE FREE SPACE -------"
 
     
-    if sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v vgs >/dev/null 2>&1"; then
+    if sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no  "$username@$host" "command -v vgs >/dev/null 2>&1"; then
         # Get a list of all volume groups
-        VG_LIST=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --separator : --options vg_name'")
+        VG_LIST=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --separator : --options vg_name'")
         VG_LIST=$(echo "$VG_LIST" |  cut -d':' -f2  )
         VG_LIST=$(echo "$VG_LIST" |  tr -d '\r\n'  )
 
@@ -95,8 +95,8 @@ function volume_group_free_extents_check_linux_v1 {
                 vg_name=$(echo "$vg_name" | sed 's/^ *//;s/ *$//')
 
                 # Get the free and total size of the volume group
-                VG_FREE=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --units g --separator : --options vg_free '$vg_name''")
-                VG_SIZE=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --units g --separator : --options vg_size '$vg_name''")
+                VG_FREE=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --units g --separator : --options vg_free '$vg_name''")
+                VG_SIZE=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --units g --separator : --options vg_size '$vg_name''")
                 
                 # Remove the unit from the free and total size values
                 VG_FREE=$(echo "$VG_FREE" | sed 's/[^0-9.]//g')
@@ -134,10 +134,10 @@ function volume_group_free_extents_check_linux_v1 {
 function volume_group_free_extents_check_linux_v2 {
     echo -e "------- CHECK FOR VOLUME GROUP HAVE 15% OR MORE FREE SPACE -------"
 
-    if sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v vgs >/dev/null 2>&1"; then
+    if sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "command -v vgs >/dev/null 2>&1"; then
 
         # Get a list of all volume groups
-        VG_LIST=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --separator : --options vg_name'")
+        VG_LIST=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings --readonly --separator : --options vg_name'")
         VG_LIST=$(echo "$VG_LIST" |  cut -d':' -f2  )
         VG_LIST=$(echo "$VG_LIST" |  tr -d '\r\n'  )
 
@@ -156,11 +156,11 @@ function volume_group_free_extents_check_linux_v2 {
                 vg_name=$(echo "$vg_name" | sed 's/^ *//;s/ *$//')
 
                 #  Get the used and total extents for the volume group
-                extents=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings -o vg_extent_size,vg_extent_count $vg_name '")
+                extents=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'vgs --noheadings -o vg_extent_size,vg_extent_count $vg_name '")
                 extents=$(echo "$extents" | cut -d':' -f2 )
                 extents=$(echo $extents | awk '{ print $1 * $2 }' )
             
-                used_extents=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c ' vgs --noheadings -o vg_extent_size,vg_free_count $vg_name '")
+                used_extents=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c ' vgs --noheadings -o vg_extent_size,vg_free_count $vg_name '")
                 used_extents=$(echo "$used_extents" | cut -d':' -f2 )
                 used_extents=$(echo $used_extents | awk '{ print ($1 * $2) }')
 
