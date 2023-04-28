@@ -149,7 +149,7 @@ function main {
 
 
             #------------------------- Checking Winodws Specific Pre-Requisites ------------------------#
-            ./WindowsCheck.sh "$host" "$username" "$password"
+            ./WindowsCheck.sh "$host" "$username" "$password" "$port"
 
         #################################################################################################################
         #################################################################################################################
@@ -195,7 +195,7 @@ function os_check_linux {
     echo -e "------------ OS CHECK ------------"
     
     # Get a os of system
-    os=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "cat /etc/*-release ")
+    os=$(sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "cat /etc/*-release ")
     osname=$(echo "$os" | grep "PRETTY_NAME" | sed 's/PRETTY_NAME=//g' | sed 's/"//g')
 
     # Checking whether system os is supported or not
@@ -228,7 +228,7 @@ function cloud_check_linux {
     
 
     
-    if sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v dmidecode >/dev/null 2>&1"; then
+    if sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "command -v dmidecode >/dev/null 2>&1"; then
         system_info=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode'")
     else
         echo "ERROR: Cloud detection (dmidecode) command is not installed on $host"
@@ -283,14 +283,14 @@ function hypervisor_check_linux {
     echo -e "----------- HYPERVISOR CHECK -----------"
 
     # Get a hypervisor of system
-    if sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v systemd-detect-virt >/dev/null 2>&1"; then
-        hypervisor=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "systemd-detect-virt")
+    if sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "command -v systemd-detect-virt >/dev/null 2>&1"; then
+        hypervisor=$(sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "systemd-detect-virt")
     
-    elif sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v virt-what >/dev/null 2>&1"; then
-        hypervisor=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'virt-what'")
+    elif sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "command -v virt-what >/dev/null 2>&1"; then
+        hypervisor=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'virt-what'")
     
-    elif sshpass -p "$password" ssh -p "$port" -n "$username@$host" "command -v dmidecode >/dev/null 2>&1"; then
-        hypervisor=$(sshpass -p "$password" ssh -p "$port" -t -t -n "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode -s system-product-name | tr '[:upper:]' '[:lower:]''")
+    elif sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "command -v dmidecode >/dev/null 2>&1"; then
+        hypervisor=$(sshpass -p "$password" ssh -p "$port" -t -t -n -o StrictHostKeyChecking=no "$username@$host" "echo \"$password\" | sudo -S sh -c 'dmidecode -s system-product-name | tr '[:upper:]' '[:lower:]''")
     
     else
         echo "ERROR: Hypervisor detection (systemd-detect-virt or virt-what or dmidecode )command not installed on $host"
@@ -333,7 +333,7 @@ function filesystem_check_linux {
     fs_types_file="./file_systems.txt"
 
     # Get a list of all mounted file systems and their types, excluding loop devices and system file systems
-    df_output=$(sshpass -p "$password" ssh -p "$port" -n "$username@$host" "df -T")
+    df_output=$(sshpass -p "$password" ssh -p "$port" -n -o StrictHostKeyChecking=no "$username@$host" "df -T")
     mounted_fs=$( echo "$df_output" | awk '{if($1 !~ /^\/dev\/loop/ && $2 !~ /^(sysfs|proc|udev|devtmpfs|tmpfs)$/ ) print $1":"$2}' | tail -n +2)
 
     if [[ -z "$mounted_fs" ]]; then
@@ -378,7 +378,12 @@ function os_check_windows {
     echo -e "----------- OS CHECK ------------"
 
     # Get a os of system
-    os=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic os get caption /value")
+    if [ "$port" -eq 22 ]; then
+        os=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" "wmic os get caption /value")      
+    else [ "$port" -eq 445 ]; 
+        os=$(winexe -U "$username%$password" //$host "cmd.exe /c wmic os get caption /value")
+    fi 
+
     osname=$(echo "$os" |  tr -d '\r\n'  )
     osname=$(echo "$osname" |  cut -d'=' -f2  )
 
@@ -407,12 +412,22 @@ function cloud_check_windows {
     local password=$3
     
     # Getting network adapter name details 
-    system_info1=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic nic get name")
+    if [ "$port" -eq 22 ]; then
+        system_info1=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username"@"$host" "wmic nic get name")        
+    else [ "$port" -eq 445 ]; 
+        system_info1=$(winexe -U "$username%$password" //$host "cmd.exe /c wmic nic get name")
+    fi
+
     system_info1=$(echo "$system_info1" |  tr -d '\r\n'  )
     system_info1=$(echo "$system_info1" |  cut -d'=' -f2  )
     
     # Getting diskdrive model name
-    system_info2=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic diskdrive get model" | tail -n +2)
+    if [ "$port" -eq 22 ]; then
+        system_info2=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username"@"$host" "wmic diskdrive get model" | tail -n +2)      
+    else [ "$port" -eq 445 ]; 
+        system_info2=$(winexe -U "$username%$password" //$host 'cmd.exe /c wmic diskdrive get model' | tail -n +2)
+    fi
+
     system_info2=$(echo "$system_info2" |  tr -d '\r\n'  )
     system_info2=$(echo "$system_info2" |  cut -d'=' -f2  )
 
@@ -467,13 +482,23 @@ function hypervisor_check_windows {
     local password=$3
     echo -e "------------ HYPERVISOR CHECK -------------"
 
-    # Get a hypervisor state (Present or not) 
-    hypervisor_state=$(sshpass -p "$password" ssh -n "$username@$host" "wmic computersystem get HypervisorPresent /format:list")
+    # Get a hypervisor state (Present or not)
+    if [ "$port" -eq 22 ]; then
+        hypervisor_state=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" "wmic computersystem get HypervisorPresent /format:list")      
+    else [ "$port" -eq 445 ]; 
+        hypervisor_state=$(winexe -U "$username%$password" //$host "cmd.exe /c wmic computersystem get HypervisorPresent /format:list")
+    fi 
+
     hypervisor_state=$(echo "$hypervisor_state" |  tr -d '\r\n'  )
     hypervisor_state=$(echo "$hypervisor_state" |  cut -d'=' -f2  )
 
     # Get a hypervisor of system
-    hypervisor=$(sshpass -p "$password" ssh -n "$username@$host" "wmic computersystem get model /format:list")
+    if [ "$port" -eq 22 ]; then
+        hypervisor=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" "wmic computersystem get model /format:list")      
+    else [ "$port" -eq 445 ]; 
+        hypervisor=$(winexe -U "$username%$password" //$host "cmd.exe /c wmic computersystem get model /format:list")
+    fi 
+
     hypervisor=$(echo "$hypervisor" |  tr -d '\r\n'  )
     hypervisor=$(echo "$hypervisor" |  cut -d'=' -f2  )
     
@@ -516,7 +541,12 @@ function filesystem_check_windows {
     echo -e "------------- FILESYSTEM CHECK ----------------"
 
     # Get a list of all volumes  and their file systems types
-    volumes=$(sshpass -p "$password" ssh -n "$username"@"$host" "wmic logicaldisk where drivetype=3 get name, filesystem")
+    if [ "$port" -eq 22 ]; then
+        volumes=$(sshpass -p "$password" ssh -n -o StrictHostKeyChecking=no "$username@$host" "wmic logicaldisk where drivetype=3 get name, filesystem")      
+    else [ "$port" -eq 445 ]; 
+        volumes=$(winexe -U "$username%$password" //$host "cmd.exe /c wmic logicaldisk where drivetype=3 get name, filesystem")
+    fi 
+   
 
     # Filter out volumes not have NTFS file system
     non_ntfs_volumes=$(echo "$volumes" | grep -vE "NTFS" | grep -E "^[A-Z]" | awk '{print $2" "$1}'| tail -n+2)
